@@ -32,16 +32,26 @@ class MetaArch(nn.Module):
 
         student_model_dict = dict()
         teacher_model_dict = dict()
-
-        import_student = getattr(models_dinov2, cfg.target_model)
-        student = import_student(img_size=224,
-            patch_size=cfg.patch_size,
-            init_values=1.0,
-            ffn_layer='mlp',
-            block_chunks=0,
-            num_register_tokens=0,
-            interpolate_antialias=False,
-            interpolate_offset=0.1)
+        if cfg.weight_inherit:
+            if cfg.target_model == 'vit_base':
+                student_backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14_lc')
+            elif cfg.target_model == 'vit_small':
+                student_backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_lc')
+            elif cfg.target_model == 'vit_large':
+                student_backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_lc')
+            elif cfg.target_model == 'vit_giant':
+                student_backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14_lc')
+            student = student_backbone.backbone
+        else:
+            import_student = getattr(models_dinov2, cfg.target_model)
+            student = import_student(img_size=224,
+                patch_size=cfg.patch_size,
+                init_values=1.0,
+                ffn_layer='mlp',
+                block_chunks=0,
+                num_register_tokens=0,
+                interpolate_antialias=False,
+                interpolate_offset=0.1)
 
         embed_dim = student.embed_dim
         
