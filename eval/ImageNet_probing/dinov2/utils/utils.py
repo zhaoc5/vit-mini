@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 import numpy as np
 import torch
 from torch import nn
-
+from collections import OrderedDict
 
 logger = logging.getLogger("dinov2")
 
