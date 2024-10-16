@@ -138,7 +138,7 @@ def get_args_parser(
         test_dataset_strs=None,
         epochs=10,
         batch_size=128,
-        num_workers=8,
+        num_workers=4,
         epoch_length=1250,
         save_checkpoint_frequency=20,
         eval_period_iterations=1250,
