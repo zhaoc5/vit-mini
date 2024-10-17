@@ -228,6 +228,7 @@ def get_args_parser():
     parser.add_argument('--finetune', default='', help='finetune from checkpoint')
     parser.add_argument('--attn-only', action='store_true')
     parser.add_argument('--weight-inherit', action='store_true', default=False)
+    parser.add_argument('--lora', action='store_true', default=False)
     
     # Dataset parameters
     parser.add_argument('--data-path', default='/datasets01/imagenet_full_size/061417/', type=str,

@@ -20,6 +20,7 @@ import torch.distributed as dist
 from torch.nn.init import trunc_normal_
 from torch.nn.utils import weight_norm
 import models_dinov2
+from peft import LoraConfig, get_peft_model
 
 import os
 os.environ['TORCH_HOME'] = '../ckpt'
@@ -52,6 +53,18 @@ class MetaArch(nn.Module):
                 num_register_tokens=0,
                 interpolate_antialias=False,
                 interpolate_offset=0.1)
+            
+        if cfg.lora:
+            config = LoraConfig(
+                r=16,
+                lora_alpha=16,
+                target_modules=["qkv"],
+                lora_dropout=0.1,
+                bias="all",
+            )
+            student = get_peft_model(student, config)
+            student.print_trainable_parameters()
+            student = student
 
         embed_dim = student.embed_dim
         
