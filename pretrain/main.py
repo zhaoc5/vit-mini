@@ -418,6 +418,21 @@ def main(args):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
         
+        # if args.output_dir:
+        #     checkpoint_paths = [output_dir / 'checkpoint.pth']
+        #     for checkpoint_path in checkpoint_paths:
+        #         utils.save_on_master({
+        #             'model': model_without_ddp.state_dict(),
+        #             'optimizer': optimizer.state_dict(),
+        #             'lr_scheduler': lr_scheduler.state_dict(),
+        #             'epoch': epoch,
+        #             'model_ema': get_state_dict(model_ema),
+        #             'scaler': loss_scaler.state_dict(),
+        #             'args': args,
+        #         }, checkpoint_path)
+        #         if utils.is_main_process():
+        #             model_without_ddp.student['backbone'].save_pretrained(output_dir/'lora')
+
         train_stats = train_one_epoch(
             model, data_loader_train,
             optimizer, device, epoch, loss_scaler,
@@ -439,6 +454,8 @@ def main(args):
                     'scaler': loss_scaler.state_dict(),
                     'args': args,
                 }, checkpoint_path)
+                if utils.is_main_process():
+                    model_without_ddp.student['backbone'].save_pretrained(output_dir/'lora')
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      'epoch': epoch,

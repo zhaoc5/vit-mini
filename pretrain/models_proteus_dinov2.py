@@ -58,7 +58,7 @@ class MetaArch(nn.Module):
             config = LoraConfig(
                 r=16,
                 lora_alpha=16,
-                target_modules=["qkv"],
+                target_modules=["qkv", "fc1", "fc2"],
                 lora_dropout=0.1,
                 bias="all",
             )
