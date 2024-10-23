@@ -90,17 +90,19 @@ class MetaArch(nn.Module):
         self.teacher = nn.ModuleDict(teacher_model_dict)
 
         teacher_embed_dim = teacher_backbone.backbone.embed_dim
-        self.patch_head = nn.Sequential(
-                  nn.LayerNorm(embed_dim),
-                  nn.Linear(embed_dim, teacher_embed_dim))
+        # self.patch_head = nn.Sequential(
+        #           nn.LayerNorm(embed_dim),
+        #           nn.Linear(embed_dim, teacher_embed_dim))
         
-        self.token_head = nn.Sequential(
-                  nn.LayerNorm(embed_dim),
-                  nn.Linear(embed_dim, teacher_embed_dim))
+        # self.token_head = nn.Sequential(
+        #           nn.LayerNorm(embed_dim),
+        #           nn.Linear(embed_dim, teacher_embed_dim))
 
-        self.fea_head = nn.Sequential(
-                  nn.LayerNorm(embed_dim),
-                  nn.Linear(embed_dim, teacher_embed_dim))
+        # self.fea_head = nn.Sequential(
+        #           nn.LayerNorm(embed_dim),
+        #           nn.Linear(embed_dim, teacher_embed_dim))
+
+        self.random_proj = RandomProjection(teacher_embed_dim, embed_dim)
 
         self.soft_criterion = torch.nn.MSELoss()
 
@@ -123,7 +125,9 @@ class MetaArch(nn.Module):
             with torch.no_grad():
                 teacher_backbone_output_dict = self.teacher.backbone(global_crops, is_training=True)
             teacher_cls_tokens = teacher_backbone_output_dict["x_norm_clstoken"]
+            teacher_cls_tokens = self.random_proj(teacher_cls_tokens)
             teacher_patch_tokens = teacher_backbone_output_dict["x_norm_patchtokens"]
+            teacher_patch_tokens = self.random_proj(teacher_patch_tokens)
             _dim = teacher_patch_tokens.shape[-1]
 
             # mask teacher patch tokens
@@ -166,11 +170,12 @@ class MetaArch(nn.Module):
         )
 
         ## projection head
-        student_patch_tokens_unmask = self.fea_head(student_patch_tokens_unmask)
+        # student_patch_tokens_unmask = self.fea_head(student_patch_tokens_unmask)
         
-        student_cls_token_unmask = self.token_head(student_cls_token_unmask)
+        # student_cls_token_unmask = self.token_head(student_cls_token_unmask)
         
-        tokens_after_head = self.patch_head(buffer_tensor_student)
+        # tokens_after_head = self.patch_head(buffer_tensor_student)
+        tokens_after_head = buffer_tensor_student
         student_patch_tokens_masked = tokens_after_head[:n_masked_patches]
 
         ## token objective
@@ -196,3 +201,17 @@ class MetaArch(nn.Module):
         loss_dict = {"patch_loss": patch_loss, "fea_loss": fea_loss, "token_loss": token_loss, "loss": total_loss}
         
         return loss_dict
+    
+
+class RandomProjection(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(RandomProjection, self).__init__()
+        # init random weight
+        # using gaussian distribution
+        self.weight = nn.Parameter(torch.randn(output_dim, input_dim) / (output_dim ** 0.5), requires_grad=False)
+
+    def forward(self, x):
+        # x      [batch_size, input_dim]
+        # weight [output_dim, input_dim]
+        # return [batch_size, output_dim]
+        return x @ self.weight.t()
