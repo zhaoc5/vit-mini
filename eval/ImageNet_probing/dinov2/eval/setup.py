@@ -13,6 +13,7 @@ from dinov2.models import build_model_from_cfg
 from dinov2.utils.config import setup
 import dinov2.utils.utils as dinov2_utils
 
+from peft import LoraConfig, PeftModel
 
 def get_args_parser(
     description: Optional[str] = None,
@@ -46,6 +47,11 @@ def get_args_parser(
         default=[],
         nargs="+",
     )
+    parser.add_argument(
+        "--lora-path",
+        type=str,
+        help="Pretrained lora path",
+    )
     return parser
 
 
@@ -59,9 +65,14 @@ def get_autocast_dtype(config):
         return torch.float
 
 
-def build_model_for_eval(config, pretrained_weights):
+def build_model_for_eval(config, pretrained_weights, lora_path, lora=False):
     model, _ = build_model_from_cfg(config, only_teacher=True)
     dinov2_utils.load_pretrained_weights(model, pretrained_weights, "teacher")
+    if lora:
+        lora_config = LoraConfig.from_pretrained(lora_path)
+        model = PeftModel.from_pretrained(model, lora_path, config=lora_config)
+        model.merge_and_unload()
+        model = model.base_model.model
     model.eval()
     model.cuda()
     return model
@@ -78,7 +89,7 @@ def build_model_for_eval_proteus(config, pretrained_weights):
 def setup_and_build_model(args) -> Tuple[Any, torch.dtype]:
     cudnn.benchmark = True
     config = setup(args)
-    model = build_model_for_eval(config, args.pretrained_weights)
+    model = build_model_for_eval(config, args.pretrained_weights, args.lora_path, args.lora)
     autocast_dtype = get_autocast_dtype(config)
     return model, autocast_dtype
 

@@ -132,6 +132,7 @@ def get_args_parser(
         type=str,
         help="Path to a file containing a mapping to adjust classifier outputs",
     )
+    parser.add_argument('--lora', action='store_true', default=False)
     parser.set_defaults(
         train_dataset_str="ImageNet:split=TRAIN",
         val_dataset_str="ImageNet:split=VAL",
