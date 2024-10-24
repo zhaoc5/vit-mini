@@ -102,7 +102,7 @@ class MetaArch(nn.Module):
         #           nn.LayerNorm(embed_dim),
         #           nn.Linear(embed_dim, teacher_embed_dim))
 
-        self.random_proj = RandomProjection(teacher_embed_dim, embed_dim)
+        self.random_proj = RandomProjection(teacher_embed_dim, 3)
 
         self.soft_criterion = torch.nn.MSELoss()
 
@@ -171,11 +171,14 @@ class MetaArch(nn.Module):
 
         ## projection head
         # student_patch_tokens_unmask = self.fea_head(student_patch_tokens_unmask)
+        student_patch_tokens_unmask = self.random_proj(student_patch_tokens_unmask)
         
         # student_cls_token_unmask = self.token_head(student_cls_token_unmask)
+        student_cls_token_unmask = self.random_proj(student_cls_token_unmask)
         
         # tokens_after_head = self.patch_head(buffer_tensor_student)
-        tokens_after_head = buffer_tensor_student
+        # tokens_after_head = buffer_tensor_student
+        tokens_after_head = self.random_proj(buffer_tensor_student)
         student_patch_tokens_masked = tokens_after_head[:n_masked_patches]
 
         ## token objective
