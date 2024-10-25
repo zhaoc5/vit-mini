@@ -119,15 +119,19 @@ class MetaArch(nn.Module):
 
         n_global_crops = 1
 
+        def l2_norm(f):
+            norms = torch.norm(f, p=2, dim=-1, keepdim=True)
+            f = f / norms
+            return f
         # compute teacher output
         # @torch.no_grad()
         def compute_teacher_output():
             with torch.no_grad():
                 teacher_backbone_output_dict = self.teacher.backbone(global_crops, is_training=True)
             teacher_cls_tokens = teacher_backbone_output_dict["x_norm_clstoken"]
-            teacher_cls_tokens = self.random_proj_t(teacher_cls_tokens)
+            teacher_cls_tokens = l2_norm(self.random_proj_t(teacher_cls_tokens))
             teacher_patch_tokens = teacher_backbone_output_dict["x_norm_patchtokens"]
-            teacher_patch_tokens = self.random_proj_t(teacher_patch_tokens)
+            teacher_patch_tokens = l2_norm(self.random_proj_t(teacher_patch_tokens))
             _dim = teacher_patch_tokens.shape[-1]
 
             # mask teacher patch tokens
@@ -159,6 +163,10 @@ class MetaArch(nn.Module):
         student_patch_tokens_unmask = student_backbone_output_dict_unmask["x_norm_patchtokens"]
         student_patch_tokens = student_backbone_output_dict["x_norm_patchtokens"]
 
+        student_cls_token_unmask = l2_norm(self.random_proj_s(student_cls_token_unmask))
+        student_patch_tokens_unmask = l2_norm(self.random_proj_s(student_patch_tokens_unmask))
+        student_patch_tokens = l2_norm(self.random_proj_s(student_patch_tokens))
+
         # mask student patch tokens
         _dim = student_patch_tokens.shape[-1]
         
@@ -171,14 +179,11 @@ class MetaArch(nn.Module):
 
         ## projection head
         # student_patch_tokens_unmask = self.fea_head(student_patch_tokens_unmask)
-        student_patch_tokens_unmask = self.random_proj_s(student_patch_tokens_unmask)
         
         # student_cls_token_unmask = self.token_head(student_cls_token_unmask)
-        student_cls_token_unmask = self.random_proj_s(student_cls_token_unmask)
         
         # tokens_after_head = self.patch_head(buffer_tensor_student)
-        # tokens_after_head = buffer_tensor_student
-        tokens_after_head = self.random_proj_s(buffer_tensor_student)
+        tokens_after_head = buffer_tensor_student
         student_patch_tokens_masked = tokens_after_head[:n_masked_patches]
 
         ## token objective
