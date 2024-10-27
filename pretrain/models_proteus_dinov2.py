@@ -101,8 +101,12 @@ class MetaArch(nn.Module):
         # self.fea_head = nn.Sequential(
         #           nn.LayerNorm(embed_dim),
         #           nn.Linear(embed_dim, teacher_embed_dim))
-        self.random_proj_s = RandomProjection(embed_dim, 3)
-        self.random_proj_t = RandomProjection(teacher_embed_dim, 3)
+        self.random_proj_s_cls = RandomProjection(embed_dim, 3)
+        self.random_proj_s_patch = RandomProjection(embed_dim, 3)
+        self.random_proj_s_patch_mask = RandomProjection(embed_dim, 3)
+
+        self.random_proj_t_cls = RandomProjection(teacher_embed_dim, 3)
+        self.random_proj_t_patch = RandomProjection(teacher_embed_dim, 3)
 
         self.soft_criterion = torch.nn.MSELoss()
 
@@ -129,9 +133,9 @@ class MetaArch(nn.Module):
             with torch.no_grad():
                 teacher_backbone_output_dict = self.teacher.backbone(global_crops, is_training=True)
             teacher_cls_tokens = teacher_backbone_output_dict["x_norm_clstoken"]
-            teacher_cls_tokens = l2_norm(self.random_proj_t(teacher_cls_tokens))
+            teacher_cls_tokens = l2_norm(self.random_proj_t_cls(l2_norm(teacher_cls_tokens)))
             teacher_patch_tokens = teacher_backbone_output_dict["x_norm_patchtokens"]
-            teacher_patch_tokens = l2_norm(self.random_proj_t(teacher_patch_tokens))
+            teacher_patch_tokens = l2_norm(self.random_proj_t_patch(l2_norm(teacher_patch_tokens)))
             _dim = teacher_patch_tokens.shape[-1]
 
             # mask teacher patch tokens
@@ -163,9 +167,9 @@ class MetaArch(nn.Module):
         student_patch_tokens_unmask = student_backbone_output_dict_unmask["x_norm_patchtokens"]
         student_patch_tokens = student_backbone_output_dict["x_norm_patchtokens"]
 
-        student_cls_token_unmask = l2_norm(self.random_proj_s(student_cls_token_unmask))
-        student_patch_tokens_unmask = l2_norm(self.random_proj_s(student_patch_tokens_unmask))
-        student_patch_tokens = l2_norm(self.random_proj_s(student_patch_tokens))
+        student_cls_token_unmask = l2_norm(self.random_proj_s_cls(l2_norm(student_cls_token_unmask)))
+        student_patch_tokens_unmask = l2_norm(self.random_proj_s_patch(l2_norm(student_patch_tokens_unmask)))
+        student_patch_tokens = l2_norm(self.random_proj_s_patch_mask(l2_norm(student_patch_tokens)))
 
         # mask student patch tokens
         _dim = student_patch_tokens.shape[-1]
