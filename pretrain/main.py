@@ -220,6 +220,7 @@ def get_args_parser():
     parser.add_argument('--lambda_token', type=float, default=1.0)
     parser.add_argument('--lambda_fea', type=float, default=1.0)
     parser.add_argument('--lambda_patch', type=float, default=1.0)
+    parser.add_argument('--n_last_blocks', type=int, default=1)
     
     # * Cosub params
     parser.add_argument('--cosub', action='store_true') 

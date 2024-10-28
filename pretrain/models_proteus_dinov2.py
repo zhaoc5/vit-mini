@@ -33,6 +33,17 @@ class MetaArch(nn.Module):
 
         student_model_dict = dict()
         teacher_model_dict = dict()
+        
+        import_student = getattr(models_dinov2, cfg.target_model)
+        student = import_student(img_size=518,
+            patch_size=cfg.patch_size,
+            init_values=1.0,
+            ffn_layer='mlp',
+            block_chunks=0,
+            num_register_tokens=0,
+            interpolate_antialias=False,
+            interpolate_offset=0.1)
+
         if cfg.weight_inherit:
             if cfg.target_model == 'vit_base':
                 student_backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14_lc')
@@ -42,17 +53,7 @@ class MetaArch(nn.Module):
                 student_backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_lc')
             elif cfg.target_model == 'vit_giant':
                 student_backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14_lc')
-            student = student_backbone.backbone
-        else:
-            import_student = getattr(models_dinov2, cfg.target_model)
-            student = import_student(img_size=224,
-                patch_size=cfg.patch_size,
-                init_values=1.0,
-                ffn_layer='mlp',
-                block_chunks=0,
-                num_register_tokens=0,
-                interpolate_antialias=False,
-                interpolate_offset=0.1)
+            student.load_state_dict(student_backbone.backbone.state_dict())
             
         if cfg.lora:
             config = LoraConfig(
@@ -101,9 +102,12 @@ class MetaArch(nn.Module):
         # self.fea_head = nn.Sequential(
         #           nn.LayerNorm(embed_dim),
         #           nn.Linear(embed_dim, teacher_embed_dim))
-        self.random_proj_s_cls = RandomProjection(embed_dim, 3)
-        self.random_proj_s_patch = RandomProjection(embed_dim, 3)
-        self.random_proj_s_patch_mask = RandomProjection(embed_dim, 3)
+        # self.random_proj_s_cls = RandomProjection(embed_dim, 3)
+        # self.random_proj_s_patch = RandomProjection(embed_dim, 3)
+        # self.random_proj_s_patch_mask = RandomProjection(embed_dim, 3)
+        self.random_proj_s_cls_list = [RandomProjection(embed_dim, 3) for _ in range(cfg.n_last_blocks)]
+        self.random_proj_s_patch_list = [RandomProjection(embed_dim, 3) for _ in range(cfg.n_last_blocks)]
+        self.random_proj_s_patch_mask_list = [RandomProjection(embed_dim, 3) for _ in range(cfg.n_last_blocks)]
 
         self.random_proj_t_cls = RandomProjection(teacher_embed_dim, 3)
         self.random_proj_t_patch = RandomProjection(teacher_embed_dim, 3)
@@ -156,61 +160,67 @@ class MetaArch(nn.Module):
             teacher_patch_tokens,
             teacher_patch_tokens_masked
         ) = compute_teacher_output()
-        
+        teacher_whole_fea = torch.cat((teacher_cls_tokens.unsqueeze(1),teacher_patch_tokens),dim=1)
+
         cur_masks = masks if self.cfg.mask_probability > 0 else None
 
-        student_backbone_output_dict, student_backbone_output_dict_unmask = self.student.backbone(
-            [global_crops, global_crops], masks=[cur_masks, None], is_training=True
-        )
+        # student_backbone_output_dict, student_backbone_output_dict_unmask = self.student.backbone([global_crops, global_crops], masks=[cur_masks, None], is_training=True)
+        n_last_blocks = self.cfg.n_last_blocks
+        output, output_intermediate = self.student.backbone([global_crops, global_crops], masks=[cur_masks, None], is_training=True, foward_intermediate=True, n_last_blocks=n_last_blocks)
+        student_backbone_output_dict, student_backbone_output_dict_unmask = output_intermediate
 
-        student_cls_token_unmask = student_backbone_output_dict_unmask["x_norm_clstoken"]
-        student_patch_tokens_unmask = student_backbone_output_dict_unmask["x_norm_patchtokens"]
-        student_patch_tokens = student_backbone_output_dict["x_norm_patchtokens"]
+        final_patch_loss, final_fea_loss, final_token_loss = 0, 0, 0
+        for i in range(0, n_last_blocks):
+            student_cls_token_unmask = student_backbone_output_dict_unmask["x_norm_clstoken"][i]
+            student_patch_tokens_unmask = student_backbone_output_dict_unmask["x_norm_patchtokens"][i]
+            student_patch_tokens = student_backbone_output_dict["x_norm_patchtokens"][i]
 
-        student_cls_token_unmask = l2_norm(self.random_proj_s_cls(l2_norm(student_cls_token_unmask)))
-        student_patch_tokens_unmask = l2_norm(self.random_proj_s_patch(l2_norm(student_patch_tokens_unmask)))
-        student_patch_tokens = l2_norm(self.random_proj_s_patch_mask(l2_norm(student_patch_tokens)))
+            student_cls_token_unmask = l2_norm(self.random_proj_s_cls_list[i](l2_norm(student_cls_token_unmask)))
+            student_patch_tokens_unmask = l2_norm(self.random_proj_s_patch_list[i](l2_norm(student_patch_tokens_unmask)))
+            student_patch_tokens = l2_norm(self.random_proj_s_patch_mask_list[i](l2_norm(student_patch_tokens)))
 
-        # mask student patch tokens
-        _dim = student_patch_tokens.shape[-1]
-        
-        buffer_tensor_student = student_patch_tokens.new_zeros(upperbound, _dim)
-        buffer_tensor_student[:n_masked_patches].copy_(
-            torch.index_select(student_patch_tokens.flatten(0, 1),
-                                dim=0,
-                                index=mask_indices_list)
-        )
+            # mask student patch tokens
+            _dim = student_patch_tokens.shape[-1]
+            
+            buffer_tensor_student = student_patch_tokens.new_zeros(upperbound, _dim)
+            buffer_tensor_student[:n_masked_patches].copy_(
+                torch.index_select(student_patch_tokens.flatten(0, 1),
+                                    dim=0,
+                                    index=mask_indices_list)
+            )
 
-        ## projection head
-        # student_patch_tokens_unmask = self.fea_head(student_patch_tokens_unmask)
-        
-        # student_cls_token_unmask = self.token_head(student_cls_token_unmask)
-        
-        # tokens_after_head = self.patch_head(buffer_tensor_student)
-        tokens_after_head = buffer_tensor_student
-        student_patch_tokens_masked = tokens_after_head[:n_masked_patches]
+            ## projection head
+            # student_patch_tokens_unmask = self.fea_head(student_patch_tokens_unmask)
+            
+            # student_cls_token_unmask = self.token_head(student_cls_token_unmask)
+            
+            # tokens_after_head = self.patch_head(buffer_tensor_student)
+            tokens_after_head = buffer_tensor_student
+            student_patch_tokens_masked = tokens_after_head[:n_masked_patches]
 
-        ## token objective
-        distillation_loss_token = self.soft_criterion(student_cls_token_unmask, teacher_cls_tokens)
+            ## token objective
+            distillation_loss_token = self.soft_criterion(student_cls_token_unmask, teacher_cls_tokens)
 
-        ## fea objective
-        student_whole_fea = torch.cat((student_cls_token_unmask.unsqueeze(1),student_patch_tokens_unmask),dim=1)
-        teacher_whole_fea = torch.cat((teacher_cls_tokens.unsqueeze(1),teacher_patch_tokens),dim=1)
-        distillation_loss_fea = self.soft_criterion(student_whole_fea, teacher_whole_fea)
+            ## fea objective
+            student_whole_fea = torch.cat((student_cls_token_unmask.unsqueeze(1),student_patch_tokens_unmask),dim=1)
+            distillation_loss_fea = self.soft_criterion(student_whole_fea, teacher_whole_fea)
 
-        ## patch objective
-        patch_loss = self.soft_criterion(student_patch_tokens_masked, teacher_patch_tokens_masked)
-        
-        # coefficient
-        token_loss = self.cfg.lambda_token * distillation_loss_token
-        fea_loss = self.cfg.lambda_fea * distillation_loss_fea
-        patch_loss = self.cfg.lambda_patch * patch_loss
+            ## patch objective
+            patch_loss = self.soft_criterion(student_patch_tokens_masked, teacher_patch_tokens_masked)
+            
+            # coefficient
+            final_token_loss += self.cfg.lambda_token * distillation_loss_token
+            final_fea_loss += self.cfg.lambda_fea * distillation_loss_fea
+            final_patch_loss += self.cfg.lambda_patch * patch_loss
 
+        final_patch_loss /= n_last_blocks
+        final_fea_loss /= n_last_blocks
+        final_token_loss /= n_last_blocks
         # compute the total loss
-        total_loss = patch_loss + fea_loss + token_loss
+        total_loss = final_patch_loss + final_fea_loss + final_token_loss
 
         # return the final loss dict
-        loss_dict = {"patch_loss": patch_loss, "fea_loss": fea_loss, "token_loss": token_loss, "loss": total_loss}
+        loss_dict = {"patch_loss": final_patch_loss, "fea_loss": final_fea_loss, "token_loss": final_token_loss, "loss": total_loss}
         
         return loss_dict
     

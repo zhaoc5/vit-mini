@@ -703,6 +703,46 @@ class DinoVisionTransformer(nn.Module):
 
         return x
 
+    def forward_features_list_intermediate(self, x, masks, n_last_blocks):
+        x_list = x
+        masks_list = masks
+        n = n_last_blocks
+
+        x = [self.prepare_tokens_with_masks(x, masks) for x, masks in zip(x_list, masks_list)]
+
+        model_output, total_block_len = [], len(self.blocks)
+        blocks_to_take = range(total_block_len - n, total_block_len) if isinstance(n, int) else n
+        for i, blk in enumerate(self.blocks):
+            x = blk(x)
+            if i in blocks_to_take:
+                model_output.append(x)
+        assert len(model_output) == len(blocks_to_take), f"only {len(model_output)} / {len(blocks_to_take)} blocks found"
+
+        all_x = x
+        output = []
+        for x, masks in zip(all_x, masks_list):
+            x_norm = self.norm(x)
+            output.append(
+                {
+                    "x_norm_clstoken": x_norm[:, 0],
+                    "x_norm_regtokens": x_norm[:, 1 : self.num_register_tokens + 1],
+                    "x_norm_patchtokens": x_norm[:, self.num_register_tokens + 1 :],
+                    "x_prenorm": x,
+                    "masks": masks,
+                }
+            )
+
+        output_intermediate = []
+        output_intermediate.append({"x_norm_clstoken": [], "x_norm_patchtokens": []})
+        output_intermediate.append({"x_norm_clstoken": [], "x_norm_patchtokens": []})
+        for all_x in model_output:
+            for i, x in enumerate(all_x):
+                x_norm = self.norm(x)
+                output_intermediate[i]["x_norm_clstoken"].append(x_norm[:, 0])
+                output_intermediate[i]["x_norm_patchtokens"].append(x_norm[:, self.num_register_tokens + 1 :])
+
+        return output, output_intermediate
+    
     def forward_features_list(self, x_list, masks_list):
         x = [self.prepare_tokens_with_masks(x, masks) for x, masks in zip(x_list, masks_list)]
         for blk in self.blocks:
@@ -793,8 +833,12 @@ class DinoVisionTransformer(nn.Module):
             return tuple(zip(outputs, class_tokens))
         return tuple(outputs)
 
-    def forward(self, *args, is_training=False, **kwargs):
-        ret = self.forward_features(*args, **kwargs)
+    def forward(self, *args, is_training=False, foward_intermediate=False, n_last_blocks=1, **kwargs):
+        if foward_intermediate:
+            ret, ret_intermediate = self.forward_features_list_intermediate(*args, n_last_blocks=n_last_blocks, **kwargs)
+            return ret, ret_intermediate
+        else:
+            ret = self.forward_features(*args, **kwargs)
         if is_training:
             return ret
         else:
