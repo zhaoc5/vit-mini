@@ -105,9 +105,9 @@ class MetaArch(nn.Module):
         # self.random_proj_s_cls = RandomProjection(embed_dim, 3)
         # self.random_proj_s_patch = RandomProjection(embed_dim, 3)
         # self.random_proj_s_patch_mask = RandomProjection(embed_dim, 3)
-        self.random_proj_s_cls_list = [RandomProjection(embed_dim, 3) for _ in range(cfg.n_last_blocks)]
-        self.random_proj_s_patch_list = [RandomProjection(embed_dim, 3) for _ in range(cfg.n_last_blocks)]
-        self.random_proj_s_patch_mask_list = [RandomProjection(embed_dim, 3) for _ in range(cfg.n_last_blocks)]
+        self.random_proj_s_cls_list = nn.ModuleList([RandomProjection(embed_dim, 3) for _ in range(cfg.n_last_blocks)])
+        self.random_proj_s_patch_list = nn.ModuleList([RandomProjection(embed_dim, 3) for _ in range(cfg.n_last_blocks)])
+        self.random_proj_s_patch_mask_list = nn.ModuleList([RandomProjection(embed_dim, 3) for _ in range(cfg.n_last_blocks)])
 
         self.random_proj_t_cls = RandomProjection(teacher_embed_dim, 3)
         self.random_proj_t_patch = RandomProjection(teacher_embed_dim, 3)
